@@ -9,6 +9,7 @@ const foodRoutes = require("./src/routes/food.routes");
 const exerciseRoutes = require("./src/routes/exercise.routes");
 const googleRoutes = require("./src/routes/google.routes");
 const assessportalRoutes = require("./src/routes/assessportal.routes");
+const aiRoutes = require("./src/routes/ai.routes");
 
 // Env loader
 loadEnv();
@@ -35,6 +36,7 @@ app.use("/api/food", foodRoutes);
 app.use("/api/exercises", exerciseRoutes);
 app.use("/api/google", googleRoutes);
 app.use("/api/assessment", assessportalRoutes);
+app.use("/api/ai", aiRoutes);
 
 // Root test
 app.get("/", (req, res) => {

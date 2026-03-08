@@ -3,6 +3,7 @@ const axios = require("axios");
 const headers = {
   "x-app-id": process.env.NUTRITIONIX_APP_ID,
   "x-app-key": process.env.NUTRITIONIX_API_KEY,
+  "x-remote-user-id": "0",
   "Content-Type": "application/json",
 };
 

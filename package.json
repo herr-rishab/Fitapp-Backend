@@ -15,6 +15,7 @@
     "express": "^4.19.2",
     "multer": "^2.0.2",
     "oauth-1.0a": "^2.2.6",
+    "openai": "^6.27.0",
     "prisma": "^5.22.0"
   },
   "engines": {

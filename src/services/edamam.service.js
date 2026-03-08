@@ -94,7 +94,18 @@ async function barcodeLookup(upc) {
     }
 
     console.log("====================================");
-    throw error;
+    // Fallback to OpenFoodFacts
+    console.log("[BARCODE] Falling back to OpenFoodFacts...");
+    try {
+      const fallback = await axios.get(
+        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(upc)}.json`,
+        { timeout: 15000 }
+      );
+      return normalizeOpenFoodFactsProduct(fallback.data?.product);
+    } catch (fallbackErr) {
+      console.error("[BARCODE] OpenFoodFacts also failed:", fallbackErr.message);
+      throw error;
+    }
   }
 }
 
@@ -160,13 +171,13 @@ async function imageFood(imageUrl) {
 
 /**
  * ============================
- * 🍳 RECIPE SEARCH 
+ * RECIPE SEARCH (Edamam Recipe API with food database fallback)
  * ============================
- * Örnek: "chicken pasta"
  */
 async function searchRecipes(query) {
-  console.log("🍳 [RECIPE] Arama:", query);
+  console.log("[RECIPE] Search:", query);
 
+  // Try Edamam Recipe API v2 first
   try {
     const res = await axios.get(RECIPE_BASE, {
       params: {
@@ -175,40 +186,78 @@ async function searchRecipes(query) {
         app_id: APP_ID,
         app_key: APP_KEY,
       },
+      timeout: 10000,
     });
 
     const hits = res.data?.hits || [];
+    console.log("[RECIPE] Edamam recipe hits:", hits.length);
 
-    console.log("✅ [RECIPE] Bulunan tarif sayısı:", hits.length);
-
-    return hits.map((hit) => ({
-      label: hit.recipe.label,
-      image: hit.recipe.image,
-      source: hit.recipe.source,
-      url: hit.recipe.url,
-      calories: Math.round(hit.recipe.calories),
-      servings: hit.recipe.yield,
-      protein: Math.round(
-        hit.recipe.totalNutrients?.PROCNT?.quantity || 0
-      ),
-      fat: Math.round(
-        hit.recipe.totalNutrients?.FAT?.quantity || 0
-      ),
-      carbs: Math.round(
-        hit.recipe.totalNutrients?.CHOCDF?.quantity || 0
-      ),
-      ingredients: hit.recipe.ingredientLines,
-    }));
-
-  } catch (error) {
-    console.error("❌ [EDAMAM RECIPE ERROR]");
-    if (error.response) {
-      console.error("📡 Status:", error.response.status);
-      console.error("📨 Response Data:", error.response.data);
-    } else {
-      console.error("🔥 Error Message:", error.message);
+    if (hits.length > 0) {
+      return hits.map((hit) => ({
+        label: hit.recipe.label,
+        image: hit.recipe.image,
+        source: hit.recipe.source,
+        url: hit.recipe.url,
+        calories: Math.round(hit.recipe.calories),
+        servings: hit.recipe.yield,
+        protein: Math.round(
+          hit.recipe.totalNutrients?.PROCNT?.quantity || 0
+        ),
+        fat: Math.round(
+          hit.recipe.totalNutrients?.FAT?.quantity || 0
+        ),
+        carbs: Math.round(
+          hit.recipe.totalNutrients?.CHOCDF?.quantity || 0
+        ),
+        ingredients: hit.recipe.ingredientLines,
+      }));
     }
-    throw error;
+  } catch (error) {
+    console.log(
+      "[RECIPE] Edamam recipe API failed (status:",
+      error.response?.status || error.message,
+      "), falling back to food database"
+    );
+  }
+
+  // Fallback: use Edamam food database parser to get food-based results
+  try {
+    const res = await axios.get(`${FOOD_BASE}/parser`, {
+      params: {
+        ingr: query,
+        app_id: APP_ID,
+        app_key: APP_KEY,
+      },
+      timeout: 10000,
+    });
+
+    const hints = res.data?.hints || [];
+    console.log("[RECIPE] Food database fallback hits:", hints.length);
+
+    return hints.slice(0, 20).map((hint) => {
+      const food = hint.food || {};
+      const nutrients = food.nutrients || {};
+      return {
+        label: food.label || "Unknown",
+        image: food.image || null,
+        source: "Edamam Food Database",
+        url: null,
+        calories: Math.round(nutrients.ENERC_KCAL || 0),
+        servings: 1,
+        protein: Math.round(nutrients.PROCNT || 0),
+        fat: Math.round(nutrients.FAT || 0),
+        carbs: Math.round(nutrients.CHOCDF || 0),
+        ingredients: [],
+        category: food.category || null,
+        brand: food.brand || null,
+      };
+    });
+  } catch (fallbackError) {
+    console.error(
+      "[RECIPE] Food database fallback also failed:",
+      fallbackError.response?.status || fallbackError.message
+    );
+    throw fallbackError;
   }
 }
 

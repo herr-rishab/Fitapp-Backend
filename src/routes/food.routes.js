@@ -13,7 +13,9 @@ const {
   barcodeFood,
   imageFood,
   getFoodDetails,
-  searchRecipes, // 👈 YENİ (Edamam Recipe)
+  searchRecipes,
+  getCuratedFoods,
+  nutritionCalc,
 } = require("../controllers/food.controller");
 
 
@@ -81,6 +83,20 @@ router.post(
 // Örnek: /api/food/recipes?q=chicken pasta
 // ===============================
 router.get("/recipes", searchRecipes);
+
+
+// ===============================
+// Curated Food Lists (by category)
+// POST body: { category: "high_protein" | "low_carb" | "superfoods" | "keto" | "vegan" | "pre_workout" }
+// ===============================
+router.post("/curated", getCuratedFoods);
+
+
+// ===============================
+// Nutrition Calculator (BMI, TDEE, macros, protein, water)
+// POST body: { weight, height, age, gender?, activity? }
+// ===============================
+router.post("/nutrition-calc", nutritionCalc);
 
 
 module.exports = router;
