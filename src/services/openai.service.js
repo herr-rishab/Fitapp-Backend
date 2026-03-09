@@ -45,29 +45,38 @@ async function generateWorkoutPlan({
   workoutStyle,
   targetBodyPart,
   exercises,
+  weight,
+  height,
+  desiredWeight,
+  age,
+  gender,
 }) {
-  const prompt = `You are a certified personal trainer. Create a structured weekly workout plan.
+  const prompt = `You are a certified personal trainer and sports nutritionist. Create a detailed structured weekly workout plan.
 
 User Profile:
 - Fitness Goal: ${fitnessGoal || "general fitness"}
 - Fitness Level: ${fitnessLevel || "beginner"}
-- Available Days: ${workoutDays || "3-4"} days/week
-- Workout Style: ${workoutStyle || "mixed"}
+- Available Days: ${workoutDays || "4"} days/week
+- Workout Style: ${workoutStyle || "gym"}
 ${targetBodyPart ? `- Focus Area: ${targetBodyPart}` : ""}
+${weight ? `- Current Weight: ${weight} lbs` : ""}
+${height ? `- Height: ${height} inches` : ""}
+${desiredWeight ? `- Desired Weight: ${desiredWeight} lbs` : ""}
+${age ? `- Age: ${age}` : ""}
+${gender ? `- Gender: ${gender}` : ""}
 
-${exercises && exercises.length > 0 ? `Available exercises from database:\n${exercises.map(e => `- ${e.name} (${e.bodyParts?.join(", ")}) [${e.equipments?.join(", ")}]`).join("\n")}` : ""}
+Create a 7-day workout plan like a personal trainer spreadsheet. For each day include:
+- Day number (1-7)
+- Title for the day (e.g. "Legs & Glutes", "Upper Body Push", "Rest & Recovery")
+- 4-5 exercises per workout day with: name, sets/reps format (e.g. "3 set/10"), duration in minutes, estimated calories burned
+- food_before: specific pre-workout meal (e.g. "1 banana + 1 tbsp peanut butter")
+- food_after: specific post-workout meal (e.g. "1 scoop whey + 1 cup rice + 100g chicken")
+- Include 1-2 rest days with no exercises
 
-Create a 7-day workout plan. For each day include:
-- Day number and workout type (e.g. "Day 1: Upper Body Strength")
-- 4-6 exercises with sets, reps, duration, and estimated calories burned
-- Pre-workout food suggestion
-- Post-workout food suggestion
-- Rest days where appropriate
+Format as JSON array. EACH exercise has name, sets, reps, duration, calories, food_before, food_after:
+[{"day":1,"title":"Legs & Glutes","exercises":[{"name":"Barbell Back Squat","sets":4,"reps":8,"duration":"12 min","calories":110,"food_before":"1 banana + 1 tbsp peanut butter","food_after":"1 scoop whey + 1 cup cooked rice + 100g chicken"}]},{"day":6,"title":"Rest & Recovery","exercises":[]}]
 
-Format as JSON array:
-[{"day":1,"title":"Upper Body","exercises":[{"name":"...","sets":3,"reps":12,"duration":"10 min","calories":80,"food_before":"...","food_after":"..."}]},...]
-
-Return ONLY valid JSON, no markdown.`;
+Return ONLY valid JSON, no markdown, no explanation.`;
 
   const response = await client.chat.completions.create({
     model: "gpt-4o-mini",
@@ -137,7 +146,54 @@ function buildSystemPrompt({ coachName, coachPersonality, fitnessGoal, personali
   return prompt;
 }
 
+async function generateRestaurantMenu({
+  restaurantName,
+  cuisineType,
+  dietaryFilter,
+}) {
+  const filterDesc = {
+    all: "balanced mix of dishes",
+    vegan: "vegan dishes only",
+    vegetarian: "vegetarian dishes only",
+    organic: "organic/clean dishes",
+    high_protein: "high-protein dishes (30g+ protein per serving)",
+    high_carbs: "high-carb energy dishes",
+    low_calories: "low-calorie dishes (under 400 cal)",
+    keto: "keto-friendly low-carb dishes",
+  };
+
+  const filter = filterDesc[dietaryFilter] || filterDesc.all;
+
+  const prompt = `You are a nutrition expert. Generate a realistic restaurant menu for "${restaurantName}" (${cuisineType || "restaurant"}).
+
+Requirements:
+- Generate 6-8 menu items that match: ${filter}
+- Each item must have realistic name, description, price, calories, protein, carbs, and fat
+- Prices should be realistic US restaurant prices ($8-$25 range)
+- Nutrition values should be realistic and accurate for the dish described
+- Include a mix of appetizers, mains, and healthy sides
+
+Return ONLY valid JSON array, no markdown:
+[{"name":"Grilled Salmon Bowl","description":"Wild-caught salmon, cauliflower rice, broccoli, lemon herb sauce","price":16.99,"calories":420,"protein":38,"carbs":22,"fat":18},...]`;
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 1500,
+    temperature: 0.7,
+  });
+
+  const text = response.choices[0]?.message?.content || "[]";
+  try {
+    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return [];
+  }
+}
+
 module.exports = {
   chatWithCoach,
   generateWorkoutPlan,
+  generateRestaurantMenu,
 };

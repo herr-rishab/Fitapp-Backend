@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const { chatWithCoach, generateWorkoutPlan } = require("../services/openai.service");
+const { chatWithCoach, generateWorkoutPlan, generateRestaurantMenu } = require("../services/openai.service");
 
 // POST /api/ai/chat
 router.post("/chat", async (req, res) => {
@@ -45,6 +45,11 @@ router.post("/workout-plan", async (req, res) => {
       workoutStyle,
       targetBodyPart,
       exercises,
+      weight,
+      height,
+      desiredWeight,
+      age,
+      gender,
     } = req.body;
 
     const plan = await generateWorkoutPlan({
@@ -54,12 +59,39 @@ router.post("/workout-plan", async (req, res) => {
       workoutStyle,
       targetBodyPart,
       exercises,
+      weight,
+      height,
+      desiredWeight,
+      age,
+      gender,
     });
 
     res.json({ plan });
   } catch (err) {
     console.error("Workout plan error:", err.message);
     res.status(500).json({ error: "Workout plan generation failed" });
+  }
+});
+
+// POST /api/ai/restaurant-menu
+router.post("/restaurant-menu", async (req, res) => {
+  try {
+    const { restaurantName, cuisineType, dietaryFilter } = req.body;
+
+    if (!restaurantName) {
+      return res.status(400).json({ error: "restaurantName is required" });
+    }
+
+    const menuItems = await generateRestaurantMenu({
+      restaurantName,
+      cuisineType,
+      dietaryFilter,
+    });
+
+    res.json({ menuItems });
+  } catch (err) {
+    console.error("Restaurant menu error:", err.message);
+    res.status(500).json({ error: "Menu generation failed" });
   }
 });
 
