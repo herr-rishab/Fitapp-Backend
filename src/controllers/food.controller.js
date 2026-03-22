@@ -11,6 +11,8 @@ const fatsecret = require("../services/fatsecret.service");
 const edamam = require("../services/edamam.service");
 const nutritionix = require("../services/nutritionix.service");
 const { analyzeFoodImage } = require("../services/openai.service");
+const axios = require("axios");
+const spoonacular = require("../services/spoonacular.service");
 
 
 // ============================
@@ -236,7 +238,7 @@ async function getFoodDetails(req, res) {
 }
 
 // ============================
-// Recipe Search (Edamam Recipe API with FatSecret fallback)
+// Recipe Search (Spoonacular with Edamam fallback)
 // ============================
 async function searchRecipes(req, res) {
   const { q } = req.query;
@@ -247,42 +249,27 @@ async function searchRecipes(req, res) {
     });
   }
 
-  // Try Edamam first (recipe API -> food database fallback built in)
+  // Try Spoonacular first
   try {
-    const recipes = await edamam.searchRecipes(q);
+    const recipes = await spoonacular.searchRecipes(q);
 
     if (recipes && recipes.length > 0) {
       return res.json({
-        source: "edamam",
+        source: "spoonacular",
         total: recipes.length,
         recipes,
       });
     }
   } catch (err) {
-    console.error("Edamam recipe search failed, trying FatSecret fallback:", err.message);
+    console.error("Spoonacular recipe search failed, trying Edamam fallback:", err.message);
   }
 
-  // Final fallback: use FatSecret to provide food-based results
+  // Fallback: Edamam recipe search only
   try {
-    const results = await fatsecret.searchFoods(q);
-    const foods = Array.isArray(results) ? results : [];
-
-    const recipes = foods.slice(0, 20).map((food) => ({
-      label: food.food_name || "Unknown",
-      image: null,
-      source: "FatSecret",
-      url: food.food_url || null,
-      calories: parseNutrientFromDescription(food.food_description, "Calories"),
-      servings: 1,
-      protein: parseNutrientFromDescription(food.food_description, "Protein"),
-      fat: parseNutrientFromDescription(food.food_description, "Fat"),
-      carbs: parseNutrientFromDescription(food.food_description, "Carbs"),
-      ingredients: [],
-      description: food.food_description || null,
-    }));
+    const recipes = await edamam.searchRecipes(q);
 
     return res.json({
-      source: "fatsecret",
+      source: "edamam",
       total: recipes.length,
       recipes,
     });
@@ -292,13 +279,42 @@ async function searchRecipes(req, res) {
   }
 }
 
-// Helper to parse nutrients from FatSecret description string
-// e.g. "Per 101g - Calories: 197kcal | Fat: 7.79g | Carbs: 0.00g | Protein: 29.80g"
-function parseNutrientFromDescription(desc, nutrient) {
-  if (!desc) return 0;
-  const regex = new RegExp(`${nutrient}:\\s*([\\d.]+)`, "i");
-  const match = desc.match(regex);
-  return match ? Math.round(parseFloat(match[1])) : 0;
+async function proxyRemoteImage(req, res) {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: "Missing url" });
+  }
+
+  try {
+    const parsed = new URL(url);
+    const allowedHosts = new Set([
+      "www.edamam.com",
+      "edamam.com",
+      "img.spoonacular.com",
+      "spoonacular.com",
+    ]);
+
+    if (!allowedHosts.has(parsed.hostname)) {
+      return res.status(400).json({ error: "Unsupported image host" });
+    }
+
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 15000,
+      headers: {
+        Accept: "image/*",
+        "User-Agent": "FitApp/1.0",
+      },
+    });
+
+    res.set("Content-Type", response.headers["content-type"] || "image/jpeg");
+    res.set("Cache-Control", "public, max-age=86400");
+    return res.send(Buffer.from(response.data));
+  } catch (err) {
+    console.error("Image proxy error:", err.message);
+    return res.status(500).json({ error: "Image proxy failed" });
+  }
 }
 
 function normalizeMealTokens(text = "") {
@@ -560,5 +576,6 @@ module.exports = {
   searchRecipes,
   getCuratedFoods,
   nutritionCalc,
+  proxyRemoteImage,
 };
 

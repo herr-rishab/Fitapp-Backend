@@ -171,7 +171,7 @@ async function imageFood(imageUrl) {
 
 /**
  * ============================
- * RECIPE SEARCH (Edamam Recipe API with food database fallback)
+ * RECIPE SEARCH (Edamam Recipe API only)
  * ============================
  */
 async function searchRecipes(query) {
@@ -216,49 +216,11 @@ async function searchRecipes(query) {
     console.log(
       "[RECIPE] Edamam recipe API failed (status:",
       error.response?.status || error.message,
-      "), falling back to food database"
+      ")"
     );
   }
 
-  // Fallback: use Edamam food database parser to get food-based results
-  try {
-    const res = await axios.get(`${FOOD_BASE}/parser`, {
-      params: {
-        ingr: query,
-        app_id: APP_ID,
-        app_key: APP_KEY,
-      },
-      timeout: 10000,
-    });
-
-    const hints = res.data?.hints || [];
-    console.log("[RECIPE] Food database fallback hits:", hints.length);
-
-    return hints.slice(0, 20).map((hint) => {
-      const food = hint.food || {};
-      const nutrients = food.nutrients || {};
-      return {
-        label: food.label || "Unknown",
-        image: food.image || null,
-        source: "Edamam Food Database",
-        url: null,
-        calories: Math.round(nutrients.ENERC_KCAL || 0),
-        servings: 1,
-        protein: Math.round(nutrients.PROCNT || 0),
-        fat: Math.round(nutrients.FAT || 0),
-        carbs: Math.round(nutrients.CHOCDF || 0),
-        ingredients: [],
-        category: food.category || null,
-        brand: food.brand || null,
-      };
-    });
-  } catch (fallbackError) {
-    console.error(
-      "[RECIPE] Food database fallback also failed:",
-      fallbackError.response?.status || fallbackError.message
-    );
-    throw fallbackError;
-  }
+  return [];
 }
 
 // ============================

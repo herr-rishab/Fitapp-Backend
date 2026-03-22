@@ -16,6 +16,7 @@ const {
   searchRecipes,
   getCuratedFoods,
   nutritionCalc,
+  proxyRemoteImage,
 } = require("../controllers/food.controller");
 
 
@@ -83,6 +84,7 @@ router.post(
 // Örnek: /api/food/recipes?q=chicken pasta
 // ===============================
 router.get("/recipes", searchRecipes);
+router.get("/image-proxy", proxyRemoteImage);
 
 
 // ===============================
