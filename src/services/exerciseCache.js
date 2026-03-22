@@ -81,6 +81,41 @@ function normalizeText(s) {
     .toLowerCase();
 }
 
+function getBodyPartAliases(bodyPart) {
+  const normalized = normalizeText(bodyPart);
+
+  const aliases = {
+    abs: ["waist"],
+    core: ["waist"],
+    arms: ["upper arms", "lower arms"],
+    legs: ["upper legs", "lower legs"],
+    glutes: ["upper legs"],
+  };
+
+  return aliases[normalized] || [normalized];
+}
+
+function matchesBodyPart(exercise, bodyPart) {
+  if (!bodyPart) return true;
+
+  const aliases = getBodyPartAliases(bodyPart);
+  const bodyParts = (exercise.bodyParts || []).map(normalizeText);
+  const muscles = [
+    ...(exercise.targetMuscles || []),
+    ...(exercise.secondaryMuscles || []),
+  ].map(normalizeText);
+
+  if (aliases.some((alias) => bodyParts.includes(alias))) {
+    return true;
+  }
+
+  if (normalizeText(bodyPart) === "glutes") {
+    return muscles.some((muscle) => muscle.includes("glute"));
+  }
+
+  return false;
+}
+
 function getId(ex) {
   // API bazen exerciseId, bazen id döndürebiliyor
   return String(ex?.exerciseId ?? ex?.id ?? "");
@@ -277,7 +312,7 @@ async function getExercises(query = {}) {
     //   - bodyPart yoksa: limit varsa limit kadar dolunca dur, yoksa güvenli bir üst sınırla dur (ör: 500)
 
     const PAGE_LIMIT = 100;
-    const REQUEST_DELAY_MS = 900;
+    const REQUEST_DELAY_MS = 100;
 
     const targetCount = limit || (bodyPart ? 60 : 200); // güvenli varsayılan
     let collected = [];
@@ -314,8 +349,7 @@ async function getExercises(query = {}) {
 
         // filtre uygula
         if (bodyPart) {
-          const has = ex.bodyParts?.some((bp) => normalizeText(bp) === bodyPart);
-          if (has) collected.push(ex);
+          if (matchesBodyPart(ex, bodyPart)) collected.push(ex);
         } else {
           collected.push(ex);
         }
@@ -332,9 +366,7 @@ async function getExercises(query = {}) {
 
     // son filtre + limit
     if (bodyPart) {
-      collected = collected.filter((ex) =>
-        ex.bodyParts?.some((bp) => normalizeText(bp) === bodyPart)
-      );
+      collected = collected.filter((ex) => matchesBodyPart(ex, bodyPart));
     }
 
     return limit ? collected.slice(0, limit) : collected;
@@ -440,6 +472,9 @@ async function recommendWorkout(payload = {}) {
   const limit = payload.limit ? Number(payload.limit) : 5;
 
   let pool = await getExercises({ bodyPart, limit: Math.max(limit * 6, 60) });
+  if (!pool.length) {
+    pool = (await getExercises({ limit: 250 })).filter((ex) => matchesBodyPart(ex, bodyPart));
+  }
   if (!pool.length) pool = await getExercises({ limit: 200 });
 
   const shuffled = [...pool].sort(() => 0.5 - Math.random());

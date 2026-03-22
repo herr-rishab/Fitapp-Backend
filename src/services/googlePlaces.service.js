@@ -81,12 +81,50 @@ function normalizeRestaurant(feature) {
     ? props.datasource.raw.types
     : categories;
 
+  // Extract complete address with street number
+  let fullAddress = "";
+
+  // Priority 1: Use address_line2 (contains full address without restaurant name)
+  if (props.address_line2 && props.address_line2.length > 10) {
+    fullAddress = props.address_line2;
+  }
+  // Priority 2: Use formatted address (contains name + full address)
+  else if (props.formatted && props.formatted.length > 10) {
+    // Remove restaurant name from formatted address if it starts with it
+    const name = props.name || props.address_line1 || "";
+    if (name && props.formatted.startsWith(name)) {
+      fullAddress = props.formatted.substring(name.length).replace(/^,\s*/, "");
+    } else {
+      fullAddress = props.formatted;
+    }
+  }
+  // Priority 3: Build manually from components
+  else {
+    const parts = [];
+    const housenumber = props.housenumber || props.datasource?.raw?.["addr:housenumber"] || "";
+    const street = props.street || props.datasource?.raw?.["addr:street"] || "";
+    const city = props.city || props.datasource?.raw?.["addr:city"] || "";
+    const state = props.state_code || props.state || "";
+    const postcode = props.postcode || props.datasource?.raw?.["addr:postcode"] || "";
+
+    if (housenumber && street) {
+      parts.push(`${housenumber} ${street}`);
+    } else if (street) {
+      parts.push(street);
+    }
+    if (city) parts.push(city);
+    if (state) parts.push(state);
+    if (postcode) parts.push(postcode);
+
+    fullAddress = parts.join(", ") || "Address not available";
+  }
+
   return {
     id: props.place_id || props.datasource?.raw?.place_id || props.datasource?.raw?.osm_id || `${props.lat},${props.lon}`,
     placeId: props.place_id || props.datasource?.raw?.place_id || null,
     name: props.name || props.address_line1 || "Unknown restaurant",
     type: categories[0] || "restaurant",
-    address: props.formatted || props.address_line1 || "Unknown address",
+    address: fullAddress,
     rating: props.datasource?.raw?.rating || 0,
     lat: props.lat,
     lon: props.lon,
@@ -94,7 +132,7 @@ function normalizeRestaurant(feature) {
     calories: Math.floor(Math.random() * 400) + 200,
     protein: Math.floor(Math.random() * 30) + 10,
     distanceMiles: toMiles(props.distance),
-    website: props.website || null,
+    website: props.website || props.datasource?.raw?.website || null,
   };
 }
 
@@ -148,21 +186,44 @@ async function getNearbyRestaurants(lat, lng, radius = 1500) {
 
   console.log("📦 RAW RESULTS:", features.length);
 
-  const filtered = features.filter((feature) => {
+  // Filter and score restaurants
+  const scored = features.map((feature) => {
     const props = feature?.properties || {};
     const name = props.name || props.address_line1 || "";
     const categories = Array.isArray(props.categories) ? props.categories : [];
 
-    if (hasBadKeyword(name, categories)) return false;
-    if (hasGoodKeyword(name, categories)) return true;
+    let score = 0;
 
+    // Priority 1: Has complete address with street number (most important)
+    const hasStreetNumber = props.housenumber || props.datasource?.raw?.["addr:housenumber"];
+    if (hasStreetNumber) score += 100;
+
+    // Priority 2: Has good health keywords
+    if (hasGoodKeyword(name, categories)) score += 50;
+
+    // Priority 3: High rating
     const rating = Number(props.datasource?.raw?.rating || 0);
-    return rating >= 4.2 || categories.includes("catering.restaurant");
-  });
+    if (rating >= 4.5) score += 30;
+    else if (rating >= 4.0) score += 20;
 
-  const formatted = filtered.map(normalizeRestaurant);
+    // Priority 4: Is a restaurant (not just a building)
+    if (categories.includes("catering.restaurant") || categories.includes("catering.cafe")) score += 10;
 
-  console.log(`🥗 FINAL HEALTHY RESTAURANTS: ${formatted.length}`);
+    // Penalty: Has bad keywords (but don't exclude completely)
+    if (hasBadKeyword(name, categories)) score -= 30;
+
+    // Exclude if no name or score is too low
+    if (!name || name.length < 2 || score < 0) return null;
+
+    return { feature, score };
+  }).filter(Boolean);
+
+  // Sort by score (highest first) and take top results
+  scored.sort((a, b) => b.score - a.score);
+
+  const formatted = scored.slice(0, 20).map(item => normalizeRestaurant(item.feature));
+
+  console.log(`🥗 FINAL RESTAURANTS: ${formatted.length} (prioritized by address completeness)`);
 
   return formatted;
 }

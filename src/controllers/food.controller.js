@@ -10,6 +10,7 @@ const {
 const fatsecret = require("../services/fatsecret.service");
 const edamam = require("../services/edamam.service");
 const nutritionix = require("../services/nutritionix.service");
+const { analyzeFoodImage } = require("../services/openai.service");
 
 
 // ============================
@@ -140,7 +141,7 @@ async function nlpFood(req, res) {
 
   // Fallback to FatSecret search
   try {
-    const results = await fatsecret.searchFoods(text);
+    const results = await searchFoodsFromDescription(text);
     res.json({ source: "fatsecret", results });
   } catch (err) {
     console.error("NLP error:", err.message);
@@ -181,10 +182,35 @@ async function imageFood(req, res) {
   }
 
   try {
-    const data = await edamam.imageFood(null);
+    const aiResult = await analyzeFoodImage({
+      imageBuffer: req.file.buffer,
+      mimeType: req.file.mimetype || "image/jpeg",
+    });
+
+    const hints = Array.isArray(aiResult?.detectedFoods)
+      ? aiResult.detectedFoods.map((item) => ({
+          food: {
+            label: item?.label || "Unknown food",
+            category: item?.category || "Food",
+            confidence: item?.confidence || "medium",
+          },
+        }))
+      : [];
+
+    const recipes = Array.isArray(aiResult?.recipes)
+      ? aiResult.recipes
+          .filter((recipe) => recipe?.label)
+          .map((recipe) => ({
+            label: recipe.label,
+            description: recipe.description || "",
+          }))
+      : [];
+
     res.json({
-      source: "image",
-      hints: data?.hints || [],
+      source: "openai-vision",
+      description: aiResult?.description || "",
+      hints,
+      recipes,
     });
   } catch (err) {
     console.error("Image recognition error:", err.message);
@@ -273,6 +299,41 @@ function parseNutrientFromDescription(desc, nutrient) {
   const regex = new RegExp(`${nutrient}:\\s*([\\d.]+)`, "i");
   const match = desc.match(regex);
   return match ? Math.round(parseFloat(match[1])) : 0;
+}
+
+function normalizeMealTokens(text = "") {
+  return String(text)
+    .toLowerCase()
+    .replace(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/g, " ")
+    .replace(/\b(cup|cups|slice|slices|piece|pieces|tbsp|tsp|gram|grams|g|oz|ounce|ounces|ml|bowl|bowls|plate|plates)\b/g, " ")
+    .replace(/\b(and|with|plus|for|of|the|a|an|to)\b/g, " ")
+    .split(/[,+]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+async function searchFoodsFromDescription(text) {
+  const phrases = normalizeMealTokens(text);
+  const queries = phrases.length ? phrases : [text];
+  const seen = new Set();
+  const results = [];
+
+  for (const query of queries.slice(0, 5)) {
+    const foods = await fatsecret.searchFoods(query);
+    for (const food of foods.slice(0, 3)) {
+      const key = food.food_id || `${food.food_name}:${food.food_description}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(food);
+      }
+    }
+  }
+
+  if (!results.length) {
+    return fatsecret.searchFoods(text);
+  }
+
+  return results;
 }
 // ============================
 // Curated Food Lists (FatSecret search by category)

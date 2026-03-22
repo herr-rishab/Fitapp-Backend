@@ -45,6 +45,7 @@ async function generateWorkoutPlan({
   workoutStyle,
   targetBodyPart,
   exercises,
+  duration,
   weight,
   height,
   desiredWeight,
@@ -58,6 +59,7 @@ User Profile:
 - Fitness Level: ${fitnessLevel || "beginner"}
 - Available Days: ${workoutDays || "4"} days/week
 - Workout Style: ${workoutStyle || "gym"}
+${duration ? `- Target Session Length: ${duration} minutes` : ""}
 ${targetBodyPart ? `- Focus Area: ${targetBodyPart}` : ""}
 ${weight ? `- Current Weight: ${weight} lbs` : ""}
 ${height ? `- Height: ${height} inches` : ""}
@@ -68,13 +70,16 @@ ${gender ? `- Gender: ${gender}` : ""}
 Create a 7-day workout plan like a personal trainer spreadsheet. For each day include:
 - Day number (1-7)
 - Title for the day (e.g. "Legs & Glutes", "Upper Body Push", "Rest & Recovery")
-- 4-5 exercises per workout day with: name, sets/reps format (e.g. "3 set/10"), duration in minutes, estimated calories burned
-- food_before: specific pre-workout meal (e.g. "1 banana + 1 tbsp peanut butter")
-- food_after: specific post-workout meal (e.g. "1 scoop whey + 1 cup rice + 100g chicken")
+- A short training focus summary for the day
+- 4-5 exercises per workout day with: name, sets, reps, duration in minutes, estimated calories burned
+- day-level food_before: a specific pre-workout meal with portions
+- day-level food_after: a specific post-workout meal with portions
 - Include 1-2 rest days with no exercises
+- Keep the plan practical for the user's level and goal
+- Rest days must still include recovery guidance plus lighter meal suggestions
 
-Format as JSON array. EACH exercise has name, sets, reps, duration, calories, food_before, food_after:
-[{"day":1,"title":"Legs & Glutes","exercises":[{"name":"Barbell Back Squat","sets":4,"reps":8,"duration":"12 min","calories":110,"food_before":"1 banana + 1 tbsp peanut butter","food_after":"1 scoop whey + 1 cup cooked rice + 100g chicken"}]},{"day":6,"title":"Rest & Recovery","exercises":[]}]
+Format as JSON array. EACH day object must use this exact shape:
+[{"day":1,"title":"Legs & Glutes","focus":"Compound lower-body strength and glute activation","food_before":"1 banana + 1 tbsp peanut butter","food_after":"1 scoop whey + 1 cup cooked rice + 100g chicken","exercises":[{"name":"Barbell Back Squat","sets":4,"reps":"8-10","duration":"12 min","calories":110},{"name":"Romanian Deadlift","sets":3,"reps":"10-12","duration":"10 min","calories":95}]},{"day":6,"title":"Rest & Recovery","focus":"Mobility, walking, and stretching","food_before":"Greek yogurt with berries","food_after":"Salmon, sweet potato, and vegetables","exercises":[]}]
 
 Return ONLY valid JSON, no markdown, no explanation.`;
 
@@ -164,13 +169,21 @@ async function generateRestaurantMenu({
 
   const filter = filterDesc[dietaryFilter] || filterDesc.all;
 
-  const prompt = `You are a nutrition expert. Generate a realistic restaurant menu for "${restaurantName}" (${cuisineType || "restaurant"}).
+  // Add uniqueness by including restaurant name prominently and asking for signature dishes
+  const prompt = `You are a nutrition expert creating a UNIQUE menu specifically for "${restaurantName}".
+
+Restaurant Details:
+- Name: ${restaurantName}
+- Cuisine Type: ${cuisineType || "restaurant"}
+- Dietary Focus: ${filter}
+
+IMPORTANT: Create UNIQUE dishes that match this specific restaurant's name and cuisine style. DO NOT use generic menu items.
 
 Requirements:
-- Generate 6-8 menu items that match: ${filter}
-- Each item must have realistic name, description, price, calories, protein, carbs, and fat
-- Prices should be realistic US restaurant prices ($8-$25 range)
-- Nutrition values should be realistic and accurate for the dish described
+- Generate 6-8 SIGNATURE menu items that are unique to "${restaurantName}"
+- Each dish name should reflect the restaurant's cuisine type (${cuisineType})
+- Include realistic descriptions, prices ($8-$25), and accurate nutrition (calories, protein, carbs, fat)
+- Make the dishes creative and specific to this restaurant's style
 - Include a mix of appetizers, mains, and healthy sides
 
 Return ONLY valid JSON array, no markdown:
@@ -180,7 +193,7 @@ Return ONLY valid JSON array, no markdown:
     model: "gpt-4o-mini",
     messages: [{ role: "user", content: prompt }],
     max_tokens: 1500,
-    temperature: 0.7,
+    temperature: 0.9, // Increased for more variety
   });
 
   const text = response.choices[0]?.message?.content || "[]";
@@ -192,8 +205,66 @@ Return ONLY valid JSON array, no markdown:
   }
 }
 
+async function analyzeFoodImage({
+  imageBuffer,
+  mimeType = "image/jpeg",
+}) {
+  if (!process.env.OPENAI_API_KEY || !imageBuffer) {
+    return {
+      description: "",
+      detectedFoods: [],
+      recipes: [],
+    };
+  }
+
+  const dataUrl = `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a food recognition assistant. Identify visible foods from an image and suggest simple recipes based on the detected ingredients. Return only valid JSON.",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              'Analyze this food image. Return JSON with this exact shape: {"description":"short plain-English meal description","detectedFoods":[{"label":"food name","category":"category","confidence":"high|medium|low"}],"recipes":[{"label":"recipe name","description":"1 sentence recipe idea"}]}. Keep 1-5 detected foods and up to 4 recipe ideas.',
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: dataUrl,
+            },
+          },
+        ],
+      },
+    ],
+    max_tokens: 700,
+    temperature: 0.2,
+  });
+
+  const text = response.choices[0]?.message?.content || "{}";
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      description: "",
+      detectedFoods: [],
+      recipes: [],
+    };
+  }
+}
+
 module.exports = {
   chatWithCoach,
   generateWorkoutPlan,
   generateRestaurantMenu,
+  analyzeFoodImage,
 };
