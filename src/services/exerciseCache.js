@@ -6,9 +6,11 @@ const axios = require("axios");
 
 const BASE_URL = "https://exercisedb.dev/api/v1";
 
-// Cache dosyası proje root'unda dursun diye ../../.. kullanıyoruz:
-// src/services/exerciseCache.js -> root/exercises.db.json
-const CACHE_FILE = path.join(__dirname, "../../..", "exercises.db.json");
+const CACHE_FILE =
+  process.env.EXERCISE_CACHE_FILE ||
+  (process.env.NODE_ENV === "production"
+    ? path.join("/tmp", "exercises.db.json")
+    : path.join(__dirname, "../../..", "exercises.db.json"));
 
 // TTL: 30 gün (istersen değiştir)
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 30;
